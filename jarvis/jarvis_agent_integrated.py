@@ -519,9 +519,26 @@ def audio_listener_loop():
 
 
 def run_doctor():
+    from pathlib import Path
+
     print("[doctor] Jarvis environment diagnostics")
     print(f"[doctor] Python: {sys.version.split()[0]}")
     print(f"[doctor] ASR_AVAILABLE: {ASR_AVAILABLE}")
+
+    project_dir = Path.home() / "jarvis"
+    env_path = project_dir / ".config" / "env"
+    service_path = Path.home() / ".config" / "systemd" / "user" / "jarvis.service"
+
+    if env_path.exists():
+        print(f"[doctor] OK env file: {env_path}")
+    else:
+        print(f"[doctor][ERROR] Missing env file: {env_path}")
+
+    if service_path.exists():
+        print(f"[doctor] OK systemd unit: {service_path}")
+    else:
+        print(f"[doctor][ERROR] Missing systemd unit: {service_path}")
+
     try:
         import sounddevice as sd
         devices = sd.query_devices()
@@ -558,6 +575,9 @@ def run_doctor():
     print("[doctor] Suggested env baseline:")
     for line in env_hint:
         print("  " + line)
+
+    print("[doctor] Quick fix command (copy/paste):")
+    print("  bash ~/jarvis/scripts/install_autostart.sh")
 
 
 def main():

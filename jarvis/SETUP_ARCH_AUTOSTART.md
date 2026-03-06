@@ -1,23 +1,38 @@
 # Jarvis: Arch Linux setup and autostart (project-local config)
 
-## Goal
+## TL;DR
 
-Store **all Jarvis config inside project folder** (not in `~/.config`):
-- env file: `~/jarvis/.config/env`
-- systemd unit: `~/.config/systemd/user/jarvis.service` (systemd requirement)
-- runtime paths point to `~/jarvis/...`
+Ты прав: у тебя сейчас **не создано ничего из обязательного**:
+- нет `~/jarvis/.config/env`
+- нет `~/.config/systemd/user/jarvis.service`
+
+Сделай одной командой:
+
+```bash
+cd ~/jarvis
+bash scripts/install_autostart.sh
+```
+
+После этого проверь:
+
+```bash
+systemctl --user status jarvis.service --no-pager
+journalctl --user -u jarvis.service -n 80 --no-pager
+```
 
 ---
 
-## 1) One-shot setup (copy/paste everything)
+## Что и где хранится
+
+- Jarvis env: `~/jarvis/.config/env`  ✅ (внутри проекта)
+- systemd unit: `~/.config/systemd/user/jarvis.service`  ✅ (это обязательный путь systemd)
+
+---
+
+## Если хочешь вручную (copy/paste через cat)
 
 ```bash
-cat <<'SCRIPT' > ~/jarvis/setup_jarvis_autostart.sh
-#!/usr/bin/env bash
-set -euo pipefail
-
-mkdir -p ~/jarvis/.config
-mkdir -p ~/.config/systemd/user
+mkdir -p ~/jarvis/.config ~/.config/systemd/user
 
 cat > ~/jarvis/.config/env <<'ENV'
 JARVIS_ASR_MODEL=small
@@ -33,7 +48,7 @@ JARVIS_CALIBRATION_SECONDS=1.5
 JARVIS_MIN_TEXT_LEN=4
 JARVIS_DEDUP_WINDOW=4
 JARVIS_DEBUG_AUDIO=0
-# can be index (25) OR part of device name (e.g. pipewire, pulse, USB, HyperX)
+# index или имя: pipewire/pulse/USB/HyperX/...
 JARVIS_MIC_DEVICE=pipewire
 ENV
 
@@ -58,66 +73,11 @@ UNIT
 systemctl --user daemon-reload
 systemctl --user enable --now jarvis.service
 loginctl enable-linger "$USER"
-
-echo "[OK] Jarvis autostart configured"
-echo "[OK] Env file: ~/jarvis/.config/env"
-echo "[OK] Service:  ~/.config/systemd/user/jarvis.service"
-echo "[OK] Logs: journalctl --user -u jarvis.service -f"
-SCRIPT
-
-chmod +x ~/jarvis/setup_jarvis_autostart.sh
-~/jarvis/setup_jarvis_autostart.sh
 ```
 
 ---
 
-## 2) Quick checks (copy/paste)
-
-```bash
-systemctl --user status jarvis.service --no-pager
-journalctl --user -u jarvis.service -n 80 --no-pager
-```
-
-Run doctor manually from project:
-
-```bash
-cd ~/jarvis
-. .venv/bin/activate
-python jarvis_agent_integrated.py --doctor
-```
-
----
-
-## 3) Mic troubleshooting (if Jarvis does not react)
-
-```bash
-cd ~/jarvis
-. .venv/bin/activate
-python -m sounddevice
-python jarvis_agent_integrated.py --doctor
-```
-
-If wake word still not detected, run with debug energy logs:
-
-```bash
-cd ~/jarvis
-. .venv/bin/activate
-JARVIS_DEBUG_AUDIO=1 python jarvis_agent_integrated.py
-```
-
-You should see `AUDIO energy=... threshold=...` in logs.
-If energy is always below threshold, lower `JARVIS_ENERGY_THRESHOLD` to `0.0025` in `~/jarvis/.config/env` and restart:
-
-```bash
-systemctl --user restart jarvis.service
-journalctl --user -u jarvis.service -f
-```
-
----
-
-## 4) If you want me to tune exactly for your PC
-
-Run this command and send output:
+## Диагностика (что скинуть мне, чтобы дотюнить под твой ПК)
 
 ```bash
 cat <<'CMD' > ~/jarvis/collect_jarvis_debug.sh
@@ -152,8 +112,13 @@ chmod +x ~/jarvis/collect_jarvis_debug.sh
 
 ---
 
-## Notes
+## Быстрый debug wake word
 
-- `jarvis.service` file location must stay in `~/.config/systemd/user/` (systemd rule).
-- But all **Jarvis-specific config/data** in this setup is under `~/jarvis/.config/`.
-- Model `small` is strongly recommended for Russian wake word quality; `tiny` is faster but much less stable for short utterances.
+```bash
+cd ~/jarvis
+. .venv/bin/activate
+python jarvis_agent_integrated.py --doctor
+JARVIS_DEBUG_AUDIO=1 python jarvis_agent_integrated.py
+```
+
+Если `AUDIO energy` стабильно ниже `threshold` — снизь `JARVIS_ENERGY_THRESHOLD` до `0.0025` и перезапусти сервис.
