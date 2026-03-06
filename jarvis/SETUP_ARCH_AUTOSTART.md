@@ -38,7 +38,7 @@ cat > ~/jarvis/.config/env <<'ENV'
 JARVIS_ASR_MODEL=small
 JARVIS_ASR_DEVICE=cpu
 JARVIS_SAMPLE_RATE=16000
-JARVIS_SEGMENT_SECONDS=1.2
+JARVIS_SEGMENT_SECONDS=1.8
 JARVIS_WAKE_THRESHOLD=62
 JARVIS_WAKE_WINDOW=12
 JARVIS_ENERGY_THRESHOLD=0.0035
@@ -125,3 +125,6 @@ JARVIS_DEBUG_AUDIO=1 python jarvis_agent_integrated.py
 
 
 Теперь поддерживается фраза в одном выдохе: `джарвис включи спотифай` (wake + команда в одной реплике).
+
+
+Если говоришь `джарвис включи спотифай`, теперь агент пытается обработать даже кривую ASR-транскрипцию (например, `включить чисп`) как команду запуска Spotify.

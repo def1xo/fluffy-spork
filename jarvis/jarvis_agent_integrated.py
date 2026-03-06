@@ -38,7 +38,7 @@ WAKE_WINDOW_SECONDS = float(os.getenv("JARVIS_WAKE_WINDOW", "8.0"))
 
 SAMPLE_RATE = int(os.getenv("JARVIS_SAMPLE_RATE", "16000"))
 ASR_TARGET_SAMPLE_RATE = 16000
-SEGMENT_SECONDS = float(os.getenv("JARVIS_SEGMENT_SECONDS", "1.4"))
+SEGMENT_SECONDS = float(os.getenv("JARVIS_SEGMENT_SECONDS", "1.8"))
 ENERGY_THRESHOLD = float(os.getenv("JARVIS_ENERGY_THRESHOLD", "0.0035"))
 MIN_TEXT_LEN = int(os.getenv("JARVIS_MIN_TEXT_LEN", "5"))
 DEDUP_WINDOW_SECONDS = float(os.getenv("JARVIS_DEDUP_WINDOW", "4.0"))
@@ -264,6 +264,43 @@ def open_spotify_search_and_play():
     return False
 
 
+
+
+def wants_spotify_open(text):
+    from rapidfuzz import fuzz
+    t = normalize_text(text)
+    if not t:
+        return False
+
+    # direct easy hits
+    if ("споти" in t or "spotify" in t) and ("включ" in t or "отк" in t or "запуст" in t):
+        return True
+
+    # robust fuzzy fallback for broken ASR like "включить чисп"
+    command_score = max(
+        fuzz.partial_ratio(t, "включить спотифай"),
+        fuzz.partial_ratio(t, "открой спотифай"),
+        fuzz.partial_ratio(t, "запусти spotify"),
+    )
+
+    token_score = 0
+    for token in t.split():
+        token_score = max(
+            token_score,
+            fuzz.ratio(token, "спотифай"),
+            fuzz.ratio(token, "spotify"),
+            fuzz.ratio(token, "споти"),
+        )
+
+    has_action = any(k in t for k in ("включ", "отк", "запуст", "постав"))
+
+    # allow slightly lower token score when action verb is present
+    if has_action and command_score >= 55:
+        return True
+    if has_action and token_score >= 52:
+        return True
+    return False
+
 def safe_handle_text_call(text):
     # if text matches dynamic music -> special flow
     if contains_dyn_music(text):
@@ -274,6 +311,12 @@ def safe_handle_text_call(text):
         else:
             say("Не получилось открыть Spotify.")
             return False
+    if wants_spotify_open(text):
+        ok = open_spotify_search_and_play()
+        if ok:
+            say("Окей, включаю Spotify.")
+            return True
+
     # default: call command_handler
     try:
         if handle_text:
@@ -353,8 +396,8 @@ def transcribe_and_process(audio_np, input_sr):
             say("Сделано.")
             session["last_wake"] = time.time()
         else:
-            say("Не понял команду или не получилось выполнить.")
-            session["active"] = False
+            say("Не понял команду или не получилось выполнить. Повтори команду.")
+            session["last_wake"] = time.time()
     else:
         logger.info("Ignored utterance (no active session).")
 
