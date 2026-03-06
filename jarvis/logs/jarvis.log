@@ -1,0 +1,148 @@
+2026-03-06 15:44:09,457 ERROR TTS error: speak() got an unexpected keyword argument 'model_name'
+Traceback (most recent call last):
+  File "/home/def1xo/jarvis/jarvis_agent_integrated.py", line 59, in say
+    tts_mod.speak(text, model_name=(preset and getattr(tts_mod, "DEFAULT_MODEL", None)), ssml=ssml)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: speak() got an unexpected keyword argument 'model_name'
+2026-03-06 15:45:56,505 INFO Downloading model to /home/def1xo/.local/share/tts/tts_models--en--ljspeech--tacotron2-DDC
+2026-03-06 15:46:53,201 INFO Model's license - apache 2.0
+2026-03-06 15:46:53,201 INFO Check https://choosealicense.com/licenses/apache-2.0/ for more info.
+2026-03-06 15:46:53,201 INFO Downloading model to /home/def1xo/.local/share/tts/vocoder_models--en--ljspeech--hifigan_v2
+2026-03-06 15:46:54,739 INFO Model's license - apache 2.0
+2026-03-06 15:46:54,739 INFO Check https://choosealicense.com/licenses/apache-2.0/ for more info.
+2026-03-06 15:46:54,747 INFO Using model: Tacotron2
+2026-03-06 15:46:54,749 INFO Setting up Audio Processor...
+2026-03-06 15:46:54,749 INFO  | sample_rate: 22050
+2026-03-06 15:46:54,749 INFO  | resample: False
+2026-03-06 15:46:54,749 INFO  | num_mels: 80
+2026-03-06 15:46:54,749 INFO  | log_func: np.log
+2026-03-06 15:46:54,749 INFO  | min_level_db: -100
+2026-03-06 15:46:54,749 INFO  | frame_shift_ms: None
+2026-03-06 15:46:54,749 INFO  | frame_length_ms: None
+2026-03-06 15:46:54,749 INFO  | ref_level_db: 20
+2026-03-06 15:46:54,749 INFO  | fft_size: 1024
+2026-03-06 15:46:54,749 INFO  | power: 1.5
+2026-03-06 15:46:54,749 INFO  | preemphasis: 0.0
+2026-03-06 15:46:54,749 INFO  | griffin_lim_iters: 60
+2026-03-06 15:46:54,749 INFO  | signal_norm: False
+2026-03-06 15:46:54,749 INFO  | symmetric_norm: True
+2026-03-06 15:46:54,749 INFO  | mel_fmin: 0
+2026-03-06 15:46:54,750 INFO  | mel_fmax: 8000.0
+2026-03-06 15:46:54,750 INFO  | pitch_fmin: 1.0
+2026-03-06 15:46:54,750 INFO  | pitch_fmax: 640.0
+2026-03-06 15:46:54,750 INFO  | spec_gain: 1.0
+2026-03-06 15:46:54,750 INFO  | stft_pad_mode: reflect
+2026-03-06 15:46:54,750 INFO  | max_norm: 4.0
+2026-03-06 15:46:54,750 INFO  | clip_norm: True
+2026-03-06 15:46:54,750 INFO  | do_trim_silence: True
+2026-03-06 15:46:54,750 INFO  | trim_db: 60
+2026-03-06 15:46:54,750 INFO  | do_sound_norm: False
+2026-03-06 15:46:54,750 INFO  | do_amp_to_db_linear: True
+2026-03-06 15:46:54,750 INFO  | do_amp_to_db_mel: True
+2026-03-06 15:46:54,750 INFO  | do_rms_norm: False
+2026-03-06 15:46:54,750 INFO  | db_level: None
+2026-03-06 15:46:54,750 INFO  | stats_path: None
+2026-03-06 15:46:54,750 INFO  | base: 2.718281828459045
+2026-03-06 15:46:54,750 INFO  | hop_length: 256
+2026-03-06 15:46:54,750 INFO  | win_length: 1024
+2026-03-06 15:46:55,019 INFO Model's reduction rate `r` is set to: 1
+2026-03-06 15:46:55,021 INFO Setting up Audio Processor...
+2026-03-06 15:46:55,021 INFO  | sample_rate: 22050
+2026-03-06 15:46:55,022 INFO  | resample: False
+2026-03-06 15:46:55,022 INFO  | num_mels: 80
+2026-03-06 15:46:55,022 INFO  | log_func: np.log
+2026-03-06 15:46:55,022 INFO  | min_level_db: -100
+2026-03-06 15:46:55,022 INFO  | frame_shift_ms: None
+2026-03-06 15:46:55,022 INFO  | frame_length_ms: None
+2026-03-06 15:46:55,022 INFO  | ref_level_db: 20
+2026-03-06 15:46:55,022 INFO  | fft_size: 1024
+2026-03-06 15:46:55,022 INFO  | power: 1.5
+2026-03-06 15:46:55,022 INFO  | preemphasis: 0.0
+2026-03-06 15:46:55,022 INFO  | griffin_lim_iters: 60
+2026-03-06 15:46:55,022 INFO  | signal_norm: False
+2026-03-06 15:46:55,022 INFO  | symmetric_norm: True
+2026-03-06 15:46:55,022 INFO  | mel_fmin: 0
+2026-03-06 15:46:55,022 INFO  | mel_fmax: 8000.0
+2026-03-06 15:46:55,022 INFO  | pitch_fmin: 1.0
+2026-03-06 15:46:55,022 INFO  | pitch_fmax: 640.0
+2026-03-06 15:46:55,022 INFO  | spec_gain: 1.0
+2026-03-06 15:46:55,022 INFO  | stft_pad_mode: reflect
+2026-03-06 15:46:55,022 INFO  | max_norm: 4.0
+2026-03-06 15:46:55,022 INFO  | clip_norm: True
+2026-03-06 15:46:55,022 INFO  | do_trim_silence: False
+2026-03-06 15:46:55,022 INFO  | trim_db: 60
+2026-03-06 15:46:55,022 INFO  | do_sound_norm: False
+2026-03-06 15:46:55,022 INFO  | do_amp_to_db_linear: True
+2026-03-06 15:46:55,022 INFO  | do_amp_to_db_mel: True
+2026-03-06 15:46:55,022 INFO  | do_rms_norm: False
+2026-03-06 15:46:55,022 INFO  | db_level: None
+2026-03-06 15:46:55,022 INFO  | stats_path: None
+2026-03-06 15:46:55,022 INFO  | base: 2.718281828459045
+2026-03-06 15:46:55,022 INFO  | hop_length: 256
+2026-03-06 15:46:55,022 INFO  | win_length: 1024
+2026-03-06 15:46:55,024 INFO Vocoder model: hifigan
+2026-03-06 15:46:55,024 INFO Setting up Audio Processor...
+2026-03-06 15:46:55,024 INFO  | sample_rate: 22050
+2026-03-06 15:46:55,024 INFO  | resample: False
+2026-03-06 15:46:55,024 INFO  | num_mels: 80
+2026-03-06 15:46:55,024 INFO  | log_func: np.log
+2026-03-06 15:46:55,024 INFO  | min_level_db: -100
+2026-03-06 15:46:55,024 INFO  | frame_shift_ms: None
+2026-03-06 15:46:55,024 INFO  | frame_length_ms: None
+2026-03-06 15:46:55,024 INFO  | ref_level_db: 20
+2026-03-06 15:46:55,024 INFO  | fft_size: 1024
+2026-03-06 15:46:55,024 INFO  | power: 1.5
+2026-03-06 15:46:55,024 INFO  | preemphasis: 0.0
+2026-03-06 15:46:55,024 INFO  | griffin_lim_iters: 60
+2026-03-06 15:46:55,024 INFO  | signal_norm: False
+2026-03-06 15:46:55,024 INFO  | symmetric_norm: True
+2026-03-06 15:46:55,024 INFO  | mel_fmin: 0
+2026-03-06 15:46:55,024 INFO  | mel_fmax: 8000.0
+2026-03-06 15:46:55,025 INFO  | pitch_fmin: 1.0
+2026-03-06 15:46:55,025 INFO  | pitch_fmax: 640.0
+2026-03-06 15:46:55,025 INFO  | spec_gain: 1.0
+2026-03-06 15:46:55,025 INFO  | stft_pad_mode: reflect
+2026-03-06 15:46:55,025 INFO  | max_norm: 4.0
+2026-03-06 15:46:55,025 INFO  | clip_norm: True
+2026-03-06 15:46:55,025 INFO  | do_trim_silence: False
+2026-03-06 15:46:55,025 INFO  | trim_db: 60
+2026-03-06 15:46:55,025 INFO  | do_sound_norm: False
+2026-03-06 15:46:55,025 INFO  | do_amp_to_db_linear: True
+2026-03-06 15:46:55,025 INFO  | do_amp_to_db_mel: True
+2026-03-06 15:46:55,025 INFO  | do_rms_norm: False
+2026-03-06 15:46:55,025 INFO  | db_level: None
+2026-03-06 15:46:55,025 INFO  | stats_path: None
+2026-03-06 15:46:55,025 INFO  | base: 2.718281828459045
+2026-03-06 15:46:55,025 INFO  | hop_length: 256
+2026-03-06 15:46:55,025 INFO  | win_length: 1024
+2026-03-06 15:46:55,026 INFO Generator model: hifigan_generator
+2026-03-06 15:46:55,077 INFO Discriminator model: hifigan_discriminator
+2026-03-06 15:46:55,465 INFO Removing weight norm...
+2026-03-06 15:46:55,489 INFO Text split into sentences.
+2026-03-06 15:46:55,489 INFO Input: ['Я на связи.']
+2026-03-06 15:46:55,489 WARNING я на связи.
+2026-03-06 15:46:55,489 WARNING Character 'я' not found in the vocabulary. Discarding it.
+2026-03-06 15:46:55,489 WARNING я на связи.
+2026-03-06 15:46:55,489 WARNING Character 'н' not found in the vocabulary. Discarding it.
+2026-03-06 15:46:55,489 WARNING я на связи.
+2026-03-06 15:46:55,489 WARNING Character 'а' not found in the vocabulary. Discarding it.
+2026-03-06 15:46:55,489 WARNING я на связи.
+2026-03-06 15:46:55,489 WARNING Character 'с' not found in the vocabulary. Discarding it.
+2026-03-06 15:46:55,489 WARNING я на связи.
+2026-03-06 15:46:55,490 WARNING Character 'в' not found in the vocabulary. Discarding it.
+2026-03-06 15:46:55,490 WARNING я на связи.
+2026-03-06 15:46:55,490 WARNING Character 'з' not found in the vocabulary. Discarding it.
+2026-03-06 15:46:55,490 WARNING я на связи.
+2026-03-06 15:46:55,490 WARNING Character 'и' not found in the vocabulary. Discarding it.
+2026-03-06 15:46:55,872 INFO Processing time: 0.389
+2026-03-06 15:46:55,872 INFO Real-time factor: 0.385
+2026-03-06 15:51:35,779 ERROR TTS error: speak() got an unexpected keyword argument 'model_name'
+Traceback (most recent call last):
+  File "/home/def1xo/jarvis/jarvis_agent_integrated.py", line 59, in say
+    tts_mod.speak(text, model_name=(preset and getattr(tts_mod, "DEFAULT_MODEL", None)), ssml=ssml)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: speak() got an unexpected keyword argument 'model_name'
+2026-03-06 15:52:58,846 INFO Text split into sentences.
+2026-03-06 15:52:58,846 INFO Input: ['Слушаю команды.']
+2026-03-06 15:53:52,555 INFO Text split into sentences.
+2026-03-06 15:53:52,555 INFO Input: ['Я на связи.']
