@@ -21,10 +21,14 @@ JARVIS_SAMPLE_RATE=16000
 JARVIS_SEGMENT_SECONDS=1.2
 JARVIS_WAKE_THRESHOLD=82
 JARVIS_WAKE_WINDOW=12
-JARVIS_ENERGY_THRESHOLD=0.018
-JARVIS_MIN_TEXT_LEN=6
+JARVIS_ENERGY_THRESHOLD=0.010
+JARVIS_ADAPTIVE_ENERGY_FACTOR=3.0
+JARVIS_MIN_ENERGY_FLOOR=0.003
+JARVIS_CALIBRATION_SECONDS=1.5
+JARVIS_MIN_TEXT_LEN=4
 JARVIS_DEDUP_WINDOW=4
-JARVIS_MIC_DEVICE=25
+# can be index (25) OR part of device name (e.g. USB, HyperX, Fifine)
+JARVIS_MIC_DEVICE=USB
 ```
 
 Tune values:
@@ -85,3 +89,12 @@ journalctl --user -u jarvis.service -f
 7. Better TTS voice profile and response style templates (Jarvis persona).
 8. Permission model for "full system access" (allow-list + confirmations for destructive ops).
 
+
+## Mic troubleshooting (if Jarvis does not react)
+
+1. Run `python -m sounddevice` and check that your microphone has input channels.
+2. Put either the numeric device index or part of microphone name into `JARVIS_MIC_DEVICE`.
+3. Restart service: `systemctl --user restart jarvis.service`.
+4. Watch logs and confirm line `Using input device index=...` appears.
+
+If `JARVIS_MIC_DEVICE` is not set, Jarvis now auto-picks default input device, then falls back to first available input device.

@@ -41,6 +41,9 @@ SEGMENT_SECONDS = float(os.getenv("JARVIS_SEGMENT_SECONDS", "1.4"))
 ENERGY_THRESHOLD = float(os.getenv("JARVIS_ENERGY_THRESHOLD", "0.012"))
 MIN_TEXT_LEN = int(os.getenv("JARVIS_MIN_TEXT_LEN", "5"))
 DEDUP_WINDOW_SECONDS = float(os.getenv("JARVIS_DEDUP_WINDOW", "4.0"))
+ADAPTIVE_ENERGY_FACTOR = float(os.getenv("JARVIS_ADAPTIVE_ENERGY_FACTOR", "3.0"))
+MIN_ENERGY_FLOOR = float(os.getenv("JARVIS_MIN_ENERGY_FLOOR", "0.003"))
+CALIBRATION_SECONDS = float(os.getenv("JARVIS_CALIBRATION_SECONDS", "1.5"))
 
 # runtime session state
 session = {
@@ -48,6 +51,7 @@ session = {
     "last_wake": 0.0,
     "last_text": "",
     "last_text_ts": 0.0,
+    "noise_floor": 0.0,
 }
 
 transcribe_lock = threading.Lock()
@@ -148,15 +152,21 @@ def is_low_quality_text(text):
 def has_voice_activity(audio_np):
     if audio_np is None or len(audio_np) == 0:
         return False
-    # simple energy gating for silent room false positives
     energy = float((audio_np ** 2).mean())
-    return energy >= ENERGY_THRESHOLD
+    dynamic_threshold = max(
+        ENERGY_THRESHOLD,
+        MIN_ENERGY_FLOOR,
+        session.get("noise_floor", 0.0) * ADAPTIVE_ENERGY_FACTOR,
+    )
+    return energy >= dynamic_threshold
+
 
 def contains_dyn_music(text):
     if not text:
         return False
     t = text.lower()
     return "динамич" in t or "энерг" in t or "движ" in t or "треки" in t
+
 
 def open_spotify_search_and_play():
     """
@@ -197,6 +207,7 @@ def open_spotify_search_and_play():
         logger.exception("open_spotify_search_and_play fallback error: %s", e)
     return False
 
+
 def safe_handle_text_call(text):
     # if text matches dynamic music -> special flow
     if contains_dyn_music(text):
@@ -214,6 +225,7 @@ def safe_handle_text_call(text):
     except Exception:
         logger.exception("handle_text failed")
     return False
+
 
 # thread worker for transcriptions
 def transcribe_and_process(audio_np):
@@ -272,38 +284,125 @@ def transcribe_and_process(audio_np):
     else:
         logger.info("Ignored utterance (no active session).")
 
+
+def select_input_device(sd, mic_env):
+    devices = sd.query_devices()
+    if mic_env:
+        mic_env = str(mic_env).strip()
+        # direct index
+        if mic_env.isdigit():
+            idx = int(mic_env)
+            try:
+                dev = sd.query_devices(idx)
+                if int(dev.get("max_input_channels", 0)) > 0:
+                    return idx
+                logger.warning("JARVIS_MIC_DEVICE=%s has no input channels", mic_env)
+            except Exception:
+                logger.warning("Invalid JARVIS_MIC_DEVICE index=%s", mic_env)
+        # substring by device name
+        lowered = mic_env.lower()
+        for idx, dev in enumerate(devices):
+            if int(dev.get("max_input_channels", 0)) <= 0:
+                continue
+            name = str(dev.get("name", "")).lower()
+            if lowered in name:
+                return idx
+        logger.warning("JARVIS_MIC_DEVICE='%s' not found by name", mic_env)
+
+    # default input from sounddevice
+    try:
+        default_dev = sd.default.device
+        if isinstance(default_dev, (tuple, list)):
+            default_input = default_dev[0]
+        else:
+            default_input = default_dev
+        if isinstance(default_input, int) and default_input >= 0:
+            d = sd.query_devices(default_input)
+            if int(d.get("max_input_channels", 0)) > 0:
+                return default_input
+    except Exception:
+        pass
+
+    # first available input device
+    for idx, dev in enumerate(devices):
+        if int(dev.get("max_input_channels", 0)) > 0:
+            return idx
+    return None
+
+
+def log_input_devices(sd):
+    try:
+        devices = sd.query_devices()
+        logger.info("Detected audio input devices:")
+        for idx, dev in enumerate(devices):
+            max_in = int(dev.get("max_input_channels", 0))
+            if max_in > 0:
+                logger.info("  [%s] %s (in=%s, default_sr=%s)", idx, dev.get("name"), max_in, dev.get("default_samplerate"))
+    except Exception as e:
+        logger.warning("Failed to list input devices: %s", e)
+
+
 # audio listener (uses sounddevice)
 def audio_listener_loop():
     import sounddevice as sd, numpy as np, queue
     q = queue.Queue()
+
     mic_env = os.getenv("JARVIS_MIC_DEVICE")
-    if mic_env:
-        try:
-            sd.default.device = int(mic_env)
-            logger.info("Set sounddevice default device -> %s", mic_env)
-        except Exception:
-            logger.info("Invalid JARVIS_MIC_DEVICE")
+    selected_input = select_input_device(sd, mic_env)
+    if selected_input is None:
+        logger.error("No audio input device available. Check your mic / PipeWire / PulseAudio setup.")
+        log_input_devices(sd)
+        return
+
+    logger.info("Using input device index=%s name=%s", selected_input, sd.query_devices(selected_input).get("name"))
+    sd.default.device = (selected_input, None)
     sd.default.samplerate = SAMPLE_RATE
     sd.default.channels = 1
+
     def callback(indata, frames, time_info, status):
+        if status:
+            logger.warning("Audio callback status: %s", status)
         q.put(indata.copy())
+
     try:
-        stream = sd.InputStream(callback=callback, channels=1, samplerate=SAMPLE_RATE, blocksize=int(SAMPLE_RATE*0.2))
+        stream = sd.InputStream(
+            device=selected_input,
+            callback=callback,
+            channels=1,
+            samplerate=SAMPLE_RATE,
+            blocksize=int(SAMPLE_RATE * 0.2),
+        )
         stream.start()
     except Exception as e:
         logger.exception("Failed to open input stream: %s", e)
+        log_input_devices(sd)
         return
+
     logger.info("Listening (audio stream started)...")
+
+    # short startup calibration for ambient noise floor
+    calib_buf = []
+    calibrate_until = time.time() + max(0.0, CALIBRATION_SECONDS)
     buffer = []
     samples_needed = int(SAMPLE_RATE * SEGMENT_SECONDS)
+
     try:
         while True:
             data = q.get()
-            arr = (data.reshape(-1)).astype('float32')
+            arr = (data.reshape(-1)).astype("float32")
+            if time.time() < calibrate_until:
+                calib_buf.append(arr)
+                continue
+            if calib_buf:
+                noise_audio = np.concatenate(calib_buf, axis=0)
+                session["noise_floor"] = float((noise_audio ** 2).mean())
+                logger.info("Noise floor calibrated=%.6f dynamic_threshold=%.6f", session["noise_floor"], max(ENERGY_THRESHOLD, MIN_ENERGY_FLOOR, session["noise_floor"] * ADAPTIVE_ENERGY_FACTOR))
+                calib_buf = []
+
             buffer.append(arr)
             total = sum(len(b) for b in buffer)
             if total >= samples_needed:
-                audio_np = __import__("numpy").concatenate(buffer, axis=0)
+                audio_np = np.concatenate(buffer, axis=0)
                 buffer = []
                 # spawn thread to transcribe & process
                 threading.Thread(target=transcribe_and_process, args=(audio_np,), daemon=True).start()
@@ -315,6 +414,7 @@ def audio_listener_loop():
             stream.close()
         except Exception:
             pass
+
 
 def main():
     say("Jarvis запущен.")
@@ -346,6 +446,7 @@ def main():
         except KeyboardInterrupt:
             cleanup_tmp()
             logger.info("Exited.")
+
 
 if __name__ == '__main__':
     main()
