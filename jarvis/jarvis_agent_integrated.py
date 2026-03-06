@@ -39,12 +39,13 @@ WAKE_WINDOW_SECONDS = float(os.getenv("JARVIS_WAKE_WINDOW", "8.0"))
 SAMPLE_RATE = int(os.getenv("JARVIS_SAMPLE_RATE", "16000"))
 ASR_TARGET_SAMPLE_RATE = 16000
 SEGMENT_SECONDS = float(os.getenv("JARVIS_SEGMENT_SECONDS", "1.4"))
-ENERGY_THRESHOLD = float(os.getenv("JARVIS_ENERGY_THRESHOLD", "0.012"))
+ENERGY_THRESHOLD = float(os.getenv("JARVIS_ENERGY_THRESHOLD", "0.0035"))
 MIN_TEXT_LEN = int(os.getenv("JARVIS_MIN_TEXT_LEN", "5"))
 DEDUP_WINDOW_SECONDS = float(os.getenv("JARVIS_DEDUP_WINDOW", "4.0"))
 ADAPTIVE_ENERGY_FACTOR = float(os.getenv("JARVIS_ADAPTIVE_ENERGY_FACTOR", "3.0"))
 MIN_ENERGY_FLOOR = float(os.getenv("JARVIS_MIN_ENERGY_FLOOR", "0.003"))
 CALIBRATION_SECONDS = float(os.getenv("JARVIS_CALIBRATION_SECONDS", "1.5"))
+DEBUG_AUDIO = os.getenv("JARVIS_DEBUG_AUDIO", "0") == "1"
 
 # runtime session state
 session = {
@@ -272,6 +273,10 @@ def safe_handle_text_call(text):
 # thread worker for transcriptions
 def transcribe_and_process(audio_np, input_sr):
     # audio_np - float32 [-1,1]
+    energy = float((audio_np ** 2).mean()) if audio_np is not None and len(audio_np) else 0.0
+    if DEBUG_AUDIO:
+        dyn_thr = max(ENERGY_THRESHOLD, MIN_ENERGY_FLOOR, session.get("noise_floor", 0.0) * ADAPTIVE_ENERGY_FACTOR)
+        logger.info("AUDIO energy=%.6f threshold=%.6f", energy, dyn_thr)
     if not has_voice_activity(audio_np):
         return
     if not transcribe_lock.acquire(blocking=False):
@@ -511,6 +516,50 @@ def audio_listener_loop():
             pass
 
 
+
+
+def run_doctor():
+    print("[doctor] Jarvis environment diagnostics")
+    print(f"[doctor] Python: {sys.version.split()[0]}")
+    print(f"[doctor] ASR_AVAILABLE: {ASR_AVAILABLE}")
+    try:
+        import sounddevice as sd
+        devices = sd.query_devices()
+        print(f"[doctor] Audio devices found: {len(devices)}")
+        in_count = 0
+        for i, d in enumerate(devices):
+            if int(d.get("max_input_channels", 0)) > 0:
+                in_count += 1
+                print(f"  in[{i}] {d.get('name')} sr={int(d.get('default_samplerate', 0))}")
+        if in_count == 0:
+            print("[doctor][ERROR] No input devices with capture channels.")
+        else:
+            print(f"[doctor] Input devices: {in_count}")
+        selected = select_input_device(sd, os.getenv("JARVIS_MIC_DEVICE"))
+        print(f"[doctor] Selected input by current env: {selected}")
+        if selected is not None:
+            sr, err = open_input_stream_with_fallback(sd, selected)
+            if sr is None:
+                print(f"[doctor][ERROR] No working sample rate for selected device: {err}")
+            else:
+                print(f"[doctor] Working input sample rate: {sr}")
+    except Exception as e:
+        print(f"[doctor][ERROR] sounddevice check failed: {e}")
+
+    env_hint = [
+        "JARVIS_ASR_MODEL=small",
+        "JARVIS_ASR_DEVICE=cpu",
+        "JARVIS_MIC_DEVICE=pipewire",
+        "JARVIS_SAMPLE_RATE=16000",
+        "JARVIS_ENERGY_THRESHOLD=0.0035",
+        "JARVIS_MIN_ENERGY_FLOOR=0.0025",
+        "JARVIS_WAKE_THRESHOLD=72",
+    ]
+    print("[doctor] Suggested env baseline:")
+    for line in env_hint:
+        print("  " + line)
+
+
 def main():
     say("Jarvis запущен.")
     init_asr()
@@ -544,4 +593,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if '--doctor' in sys.argv:
+        run_doctor()
+    else:
+        main()
