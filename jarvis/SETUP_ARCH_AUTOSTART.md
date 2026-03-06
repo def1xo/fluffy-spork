@@ -39,7 +39,7 @@ JARVIS_ASR_MODEL=small
 JARVIS_ASR_DEVICE=cpu
 JARVIS_SAMPLE_RATE=16000
 JARVIS_SEGMENT_SECONDS=1.2
-JARVIS_WAKE_THRESHOLD=72
+JARVIS_WAKE_THRESHOLD=62
 JARVIS_WAKE_WINDOW=12
 JARVIS_ENERGY_THRESHOLD=0.0035
 JARVIS_ADAPTIVE_ENERGY_FACTOR=3.0
@@ -122,3 +122,6 @@ JARVIS_DEBUG_AUDIO=1 python jarvis_agent_integrated.py
 ```
 
 Если `AUDIO energy` стабильно ниже `threshold` — снизь `JARVIS_ENERGY_THRESHOLD` до `0.0025` и перезапусти сервис.
+
+
+Теперь поддерживается фраза в одном выдохе: `джарвис включи спотифай` (wake + команда в одной реплике).

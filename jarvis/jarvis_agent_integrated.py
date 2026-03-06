@@ -33,7 +33,7 @@ logger = logging.getLogger("jarvis")
 
 # Session / wake settings
 WAKE_WORDS = ["джарвис", "джарв", "джарвет", "жарвис", "jarvis"]
-WAKE_FUZZY_THRESHOLD = int(os.getenv("JARVIS_WAKE_THRESHOLD", "70"))
+WAKE_FUZZY_THRESHOLD = int(os.getenv("JARVIS_WAKE_THRESHOLD", "62"))
 WAKE_WINDOW_SECONDS = float(os.getenv("JARVIS_WAKE_WINDOW", "8.0"))
 
 SAMPLE_RATE = int(os.getenv("JARVIS_SAMPLE_RATE", "16000"))
@@ -204,6 +204,19 @@ def open_input_stream_with_fallback(sd, selected_input):
 
     return None, last_error
 
+
+
+def split_wake_and_command(text):
+    t = normalize_text(text)
+    if not t:
+        return None, ""
+    for w in WAKE_WORDS:
+        idx = t.find(w)
+        if idx >= 0:
+            after = t[idx + len(w):].strip(" ,.!?-:")
+            return w, after
+    return None, ""
+
 def contains_dyn_music(text):
     if not text:
         return False
@@ -312,12 +325,25 @@ def transcribe_and_process(audio_np, input_sr):
         return
     logger.info("TRANSCRIBED: %s", text)
     # wake detection
+    wake_word, inline_cmd = split_wake_and_command(text)
     is_wake, score = fuzzy_wake_detect(text)
-    if is_wake:
-        # activate session
+    if wake_word or is_wake:
+        # activate/update session
         session["active"] = True
         session["last_wake"] = time.time()
-        logger.info("Wake detected (score=%s). Session active.", score)
+        logger.info("Wake detected (score=%s, wake=%s). Session active.", score, wake_word or "fuzzy")
+
+        # if command is in same utterance: execute immediately
+        if inline_cmd and len(inline_cmd) >= 2:
+            logger.info("Inline command after wake: %s", inline_cmd)
+            handled = safe_handle_text_call(inline_cmd)
+            if handled:
+                say("Сделано.")
+                session["last_wake"] = time.time()
+            else:
+                say("Не понял команду или не получилось выполнить.")
+            return
+
         say("Слушаю команды.")
         return
     # if session active and within window -> handle
@@ -570,7 +596,7 @@ def run_doctor():
         "JARVIS_SAMPLE_RATE=16000",
         "JARVIS_ENERGY_THRESHOLD=0.0035",
         "JARVIS_MIN_ENERGY_FLOOR=0.0025",
-        "JARVIS_WAKE_THRESHOLD=72",
+        "JARVIS_WAKE_THRESHOLD=62",
     ]
     print("[doctor] Suggested env baseline:")
     for line in env_hint:
