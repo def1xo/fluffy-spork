@@ -1,5 +1,5 @@
 # jarvis_agent_integrated.py — session-based command execution, cleanup on exit
-import os, sys, threading, time, traceback, logging, atexit, signal, glob, subprocess, shlex
+import os, sys, threading, time, traceback, logging, atexit, signal, glob, subprocess, shlex, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "assistant_modules"))
 
 # imports (best-effort)
@@ -38,12 +38,24 @@ WAKE_WINDOW_SECONDS = float(os.getenv("JARVIS_WAKE_WINDOW", "8.0"))
 
 SAMPLE_RATE = int(os.getenv("JARVIS_SAMPLE_RATE", "16000"))
 SEGMENT_SECONDS = float(os.getenv("JARVIS_SEGMENT_SECONDS", "1.4"))
+ENERGY_THRESHOLD = float(os.getenv("JARVIS_ENERGY_THRESHOLD", "0.012"))
+MIN_TEXT_LEN = int(os.getenv("JARVIS_MIN_TEXT_LEN", "5"))
+DEDUP_WINDOW_SECONDS = float(os.getenv("JARVIS_DEDUP_WINDOW", "4.0"))
 
 # runtime session state
 session = {
     "active": False,
-    "last_wake": 0.0
+    "last_wake": 0.0,
+    "last_text": "",
+    "last_text_ts": 0.0,
 }
+
+transcribe_lock = threading.Lock()
+
+NOISE_PATTERNS = (
+    "редактор субтитров",
+    "корректор",
+)
 
 def cleanup_tmp():
     try:
@@ -95,13 +107,50 @@ def init_asr():
 def fuzzy_wake_detect(text):
     # lightweight fuzzy matching: returns True if any wake word similar enough
     from rapidfuzz import fuzz
-    t = (text or "").lower()
+    t = normalize_text(text)
+    if not t:
+        return False, 0
+    if any(w in t for w in WAKE_WORDS):
+        return True, 100
     best = 0
     for w in WAKE_WORDS:
-        score = fuzz.partial_ratio(w, t)
+        score = max(fuzz.partial_ratio(w, t), fuzz.token_set_ratio(w, t))
         if score > best:
             best = score
     return best >= WAKE_FUZZY_THRESHOLD, best
+
+
+def normalize_text(text):
+    t = (text or "").lower().strip()
+    t = re.sub(r"[^\w\sа-яё-]", " ", t, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def is_duplicate_text(text):
+    now = time.time()
+    if text == session["last_text"] and (now - session["last_text_ts"] <= DEDUP_WINDOW_SECONDS):
+        return True
+    session["last_text"] = text
+    session["last_text_ts"] = now
+    return False
+
+
+def is_low_quality_text(text):
+    if len(text) < MIN_TEXT_LEN:
+        return True
+    if not re.search(r"[a-zа-яё]", text, flags=re.IGNORECASE):
+        return True
+    if any(pat in text for pat in NOISE_PATTERNS):
+        return True
+    return False
+
+
+def has_voice_activity(audio_np):
+    if audio_np is None or len(audio_np) == 0:
+        return False
+    # simple energy gating for silent room false positives
+    energy = float((audio_np ** 2).mean())
+    return energy >= ENERGY_THRESHOLD
 
 def contains_dyn_music(text):
     if not text:
@@ -169,15 +218,37 @@ def safe_handle_text_call(text):
 # thread worker for transcriptions
 def transcribe_and_process(audio_np):
     # audio_np - float32 [-1,1]
+    if not has_voice_activity(audio_np):
+        return
+    if not transcribe_lock.acquire(blocking=False):
+        return
     try:
         if not WHISPER_MODEL:
             return
-        segments, info = WHISPER_MODEL.transcribe(audio_np, language="ru")
+        try:
+            segments, info = WHISPER_MODEL.transcribe(
+                audio_np,
+                language="ru",
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 250},
+            )
+        except TypeError:
+            segments, info = WHISPER_MODEL.transcribe(audio_np, language="ru")
         text = " ".join([seg.text for seg in segments]).strip()
     except Exception as e:
         logger.exception("Transcribe failed: %s", e)
         return
+    finally:
+        transcribe_lock.release()
+
+    text = normalize_text(text)
     if not text:
+        return
+    if is_low_quality_text(text):
+        logger.debug("Ignored low quality text: %s", text)
+        return
+    if is_duplicate_text(text):
+        logger.debug("Ignored duplicate text: %s", text)
         return
     logger.info("TRANSCRIBED: %s", text)
     # wake detection
@@ -194,10 +265,10 @@ def transcribe_and_process(audio_np):
         handled = safe_handle_text_call(text)
         if handled:
             say("Сделано.")
+            session["last_wake"] = time.time()
         else:
             say("Не понял команду или не получилось выполнить.")
-        # keep session active for short time if you want multi-turn; here we close
-        session["active"] = False
+            session["active"] = False
     else:
         logger.info("Ignored utterance (no active session).")
 
