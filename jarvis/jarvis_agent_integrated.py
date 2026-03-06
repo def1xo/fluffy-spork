@@ -330,6 +330,28 @@ def transcribe_and_process(audio_np, input_sr):
 
 def select_input_device(sd, mic_env):
     devices = sd.query_devices()
+
+    def is_input(idx):
+        try:
+            return int(devices[idx].get("max_input_channels", 0)) > 0
+        except Exception:
+            return False
+
+    def preferred_score(name):
+        n = str(name or "").lower()
+        score = 0
+        # prefer stable virtual backends over raw hw:* to avoid ALSA quirks/overflows
+        if "pipewire" in n:
+            score += 120
+        if "pulse" in n:
+            score += 110
+        if n == "default" or n.startswith("default"):
+            score += 100
+        if "sysdefault" in n:
+            score += 90
+        if "hw:" in n:
+            score -= 40
+        return score
     if mic_env:
         mic_env = str(mic_env).strip()
         # direct index
@@ -359,17 +381,22 @@ def select_input_device(sd, mic_env):
             default_input = default_dev[0]
         else:
             default_input = default_dev
-        if isinstance(default_input, int) and default_input >= 0:
-            d = sd.query_devices(default_input)
-            if int(d.get("max_input_channels", 0)) > 0:
-                return default_input
+        if isinstance(default_input, int) and default_input >= 0 and is_input(default_input):
+            return default_input
     except Exception:
         pass
 
-    # first available input device
+    # choose best non-hw backend first (pipewire/pulse/default/sysdefault)
+    candidates = []
     for idx, dev in enumerate(devices):
-        if int(dev.get("max_input_channels", 0)) > 0:
-            return idx
+        if not is_input(idx):
+            continue
+        candidates.append((preferred_score(dev.get("name")), idx))
+
+    if candidates:
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+
     return None
 
 
@@ -388,7 +415,8 @@ def log_input_devices(sd):
 # audio listener (uses sounddevice)
 def audio_listener_loop():
     import sounddevice as sd, numpy as np, queue
-    q = queue.Queue()
+    q = queue.Queue(maxsize=24)
+    overflow_counter = 0
 
     mic_env = os.getenv("JARVIS_MIC_DEVICE")
     selected_input = select_input_device(sd, mic_env)
@@ -411,9 +439,22 @@ def audio_listener_loop():
     sd.default.samplerate = selected_rate
 
     def callback(indata, frames, time_info, status):
+        nonlocal overflow_counter
         if status:
-            logger.warning("Audio callback status: %s", status)
-        q.put(indata.copy())
+            overflow_counter += 1
+            if overflow_counter % 10 == 1:
+                logger.warning("Audio callback status: %s (count=%s)", status, overflow_counter)
+        try:
+            q.put_nowait(indata.copy())
+        except queue.Full:
+            try:
+                q.get_nowait()  # drop oldest chunk to keep stream realtime
+            except queue.Empty:
+                pass
+            try:
+                q.put_nowait(indata.copy())
+            except queue.Full:
+                pass
 
     try:
         stream = sd.InputStream(
@@ -421,7 +462,8 @@ def audio_listener_loop():
             callback=callback,
             channels=1,
             samplerate=selected_rate,
-            blocksize=int(selected_rate * 0.2),
+            blocksize=0,
+            latency="high",
         )
         stream.start()
     except Exception as e:
@@ -435,6 +477,7 @@ def audio_listener_loop():
     calib_buf = []
     calibrate_until = time.time() + max(0.0, CALIBRATION_SECONDS)
     buffer = []
+    buffered_samples = 0
     samples_needed = int(selected_rate * SEGMENT_SECONDS)
 
     try:
@@ -451,10 +494,11 @@ def audio_listener_loop():
                 calib_buf = []
 
             buffer.append(arr)
-            total = sum(len(b) for b in buffer)
-            if total >= samples_needed:
+            buffered_samples += len(arr)
+            if buffered_samples >= samples_needed:
                 audio_np = np.concatenate(buffer, axis=0)
                 buffer = []
+                buffered_samples = 0
                 # spawn thread to transcribe & process
                 threading.Thread(target=transcribe_and_process, args=(audio_np, selected_rate), daemon=True).start()
     except KeyboardInterrupt:

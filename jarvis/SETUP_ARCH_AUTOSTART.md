@@ -28,7 +28,7 @@ JARVIS_CALIBRATION_SECONDS=1.5
 JARVIS_MIN_TEXT_LEN=4
 JARVIS_DEDUP_WINDOW=4
 # can be index (25) OR part of device name (e.g. USB, HyperX, Fifine)
-JARVIS_MIC_DEVICE=USB
+JARVIS_MIC_DEVICE=pipewire
 ```
 
 Tune values:
@@ -100,3 +100,5 @@ journalctl --user -u jarvis.service -f
 If `JARVIS_MIC_DEVICE` is not set, Jarvis now auto-picks default input device, then falls back to first available input device.
 
 5. If logs show `Invalid sample rate`, leave `JARVIS_SAMPLE_RATE=16000`; Jarvis now auto-falls back to device-supported sample rate and internally resamples audio to 16 kHz for ASR.
+
+6. If logs show repeated `input overflow`, set `JARVIS_MIC_DEVICE=pipewire` (or `pulse`) and restart; the agent now prefers these backends automatically, uses high-latency stream mode and drops stale chunks to keep realtime processing stable.
