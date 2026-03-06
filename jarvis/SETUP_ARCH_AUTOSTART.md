@@ -98,3 +98,5 @@ journalctl --user -u jarvis.service -f
 4. Watch logs and confirm line `Using input device index=...` appears.
 
 If `JARVIS_MIC_DEVICE` is not set, Jarvis now auto-picks default input device, then falls back to first available input device.
+
+5. If logs show `Invalid sample rate`, leave `JARVIS_SAMPLE_RATE=16000`; Jarvis now auto-falls back to device-supported sample rate and internally resamples audio to 16 kHz for ASR.

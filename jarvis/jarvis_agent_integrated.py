@@ -37,6 +37,7 @@ WAKE_FUZZY_THRESHOLD = int(os.getenv("JARVIS_WAKE_THRESHOLD", "70"))
 WAKE_WINDOW_SECONDS = float(os.getenv("JARVIS_WAKE_WINDOW", "8.0"))
 
 SAMPLE_RATE = int(os.getenv("JARVIS_SAMPLE_RATE", "16000"))
+ASR_TARGET_SAMPLE_RATE = 16000
 SEGMENT_SECONDS = float(os.getenv("JARVIS_SEGMENT_SECONDS", "1.4"))
 ENERGY_THRESHOLD = float(os.getenv("JARVIS_ENERGY_THRESHOLD", "0.012"))
 MIN_TEXT_LEN = int(os.getenv("JARVIS_MIN_TEXT_LEN", "5"))
@@ -161,6 +162,47 @@ def has_voice_activity(audio_np):
     return energy >= dynamic_threshold
 
 
+
+
+def resample_audio(audio_np, input_sr, target_sr=ASR_TARGET_SAMPLE_RATE):
+    if audio_np is None or len(audio_np) == 0:
+        return audio_np
+    if input_sr == target_sr:
+        return audio_np
+    import numpy as np
+    duration = len(audio_np) / float(input_sr)
+    target_len = max(1, int(duration * target_sr))
+    src_x = np.linspace(0.0, 1.0, num=len(audio_np), endpoint=False)
+    dst_x = np.linspace(0.0, 1.0, num=target_len, endpoint=False)
+    return np.interp(dst_x, src_x, audio_np).astype("float32")
+
+
+def open_input_stream_with_fallback(sd, selected_input):
+    default_sr = float(sd.query_devices(selected_input).get("default_samplerate") or 0)
+    sr_candidates = []
+    for sr in (SAMPLE_RATE, default_sr, 48000, 44100, 32000, 16000):
+        if sr and sr > 0:
+            sr_int = int(sr)
+            if sr_int not in sr_candidates:
+                sr_candidates.append(sr_int)
+
+    last_error = None
+    for sr in sr_candidates:
+        try:
+            stream = sd.InputStream(
+                device=selected_input,
+                callback=None,
+                channels=1,
+                samplerate=sr,
+                blocksize=int(sr * 0.2),
+            )
+            stream.close()
+            return sr, None
+        except Exception as e:
+            last_error = e
+
+    return None, last_error
+
 def contains_dyn_music(text):
     if not text:
         return False
@@ -228,7 +270,7 @@ def safe_handle_text_call(text):
 
 
 # thread worker for transcriptions
-def transcribe_and_process(audio_np):
+def transcribe_and_process(audio_np, input_sr):
     # audio_np - float32 [-1,1]
     if not has_voice_activity(audio_np):
         return
@@ -237,15 +279,16 @@ def transcribe_and_process(audio_np):
     try:
         if not WHISPER_MODEL:
             return
+        audio_for_asr = resample_audio(audio_np, input_sr, ASR_TARGET_SAMPLE_RATE)
         try:
             segments, info = WHISPER_MODEL.transcribe(
-                audio_np,
+                audio_for_asr,
                 language="ru",
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 250},
             )
         except TypeError:
-            segments, info = WHISPER_MODEL.transcribe(audio_np, language="ru")
+            segments, info = WHISPER_MODEL.transcribe(audio_for_asr, language="ru")
         text = " ".join([seg.text for seg in segments]).strip()
     except Exception as e:
         logger.exception("Transcribe failed: %s", e)
@@ -356,8 +399,16 @@ def audio_listener_loop():
 
     logger.info("Using input device index=%s name=%s", selected_input, sd.query_devices(selected_input).get("name"))
     sd.default.device = (selected_input, None)
-    sd.default.samplerate = SAMPLE_RATE
     sd.default.channels = 1
+
+    selected_rate, probe_error = open_input_stream_with_fallback(sd, selected_input)
+    if selected_rate is None:
+        logger.exception("Failed to find working sample rate for input device: %s", probe_error)
+        log_input_devices(sd)
+        return
+
+    logger.info("Selected input sample rate=%s", selected_rate)
+    sd.default.samplerate = selected_rate
 
     def callback(indata, frames, time_info, status):
         if status:
@@ -369,8 +420,8 @@ def audio_listener_loop():
             device=selected_input,
             callback=callback,
             channels=1,
-            samplerate=SAMPLE_RATE,
-            blocksize=int(SAMPLE_RATE * 0.2),
+            samplerate=selected_rate,
+            blocksize=int(selected_rate * 0.2),
         )
         stream.start()
     except Exception as e:
@@ -384,7 +435,7 @@ def audio_listener_loop():
     calib_buf = []
     calibrate_until = time.time() + max(0.0, CALIBRATION_SECONDS)
     buffer = []
-    samples_needed = int(SAMPLE_RATE * SEGMENT_SECONDS)
+    samples_needed = int(selected_rate * SEGMENT_SECONDS)
 
     try:
         while True:
@@ -405,7 +456,7 @@ def audio_listener_loop():
                 audio_np = np.concatenate(buffer, axis=0)
                 buffer = []
                 # spawn thread to transcribe & process
-                threading.Thread(target=transcribe_and_process, args=(audio_np,), daemon=True).start()
+                threading.Thread(target=transcribe_and_process, args=(audio_np, selected_rate), daemon=True).start()
     except KeyboardInterrupt:
         logger.info("Audio listener interrupted")
     finally:
