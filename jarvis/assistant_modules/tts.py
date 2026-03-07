@@ -14,9 +14,10 @@ def _play_wav_nonblocking(path):
             continue
     return None
 
-async def _edge_synth(text, voice="ru-RU-SvetlanaNeural", outpath=None):
+async def _edge_synth(text, voice=None, outpath=None):
     try:
         import edge_tts
+        voice = voice or os.getenv("JARVIS_TTS_VOICE", "ru-RU-SvetlanaNeural")
         outpath = outpath or tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
         comm = edge_tts.Communicate(text, voice)
         await comm.save(outpath)
@@ -26,13 +27,16 @@ async def _edge_synth(text, voice="ru-RU-SvetlanaNeural", outpath=None):
         return None
 
 def _worker_loop():
-    # try edge-tts first, otherwise pyttsx3, otherwise system print
+    # backend policy: auto|edge|pyttsx3
+    preferred_backend = os.getenv("JARVIS_TTS_BACKEND", "pyttsx3").lower()
     edge_ok = False
     py_ok = False
     try:
         import importlib
         edge_ok = importlib.util.find_spec("edge_tts") is not None
     except Exception:
+        edge_ok = False
+    if preferred_backend == "pyttsx3":
         edge_ok = False
     try:
         import importlib

@@ -51,12 +51,55 @@ def spotify_open():
         print("spotify_open error:", e)
     return False
 
+
+
+RUS_NUM = {
+    "перв": 1,
+    "втор": 2,
+    "трет": 3,
+    "четв": 4,
+    "пят": 5,
+    "шест": 6,
+    "седь": 7,
+    "вось": 8,
+    "дев": 9,
+    "десят": 10,
+}
+
+
+def parse_workspace_index(txt):
+    m = re.search(r"(\d{1,2})", txt)
+    if m:
+        return max(1, int(m.group(1)))
+    for stem, num in RUS_NUM.items():
+        if stem in txt:
+            return num
+    return None
+
+
+def switch_workspace(index):
+    print(f"[command_handler] switch_workspace called index={index}")
+    # Hyprland
+    if shutil_which("hyprctl"):
+        return run(["hyprctl", "dispatch", "workspace", str(index)]) is not None
+    # i3/sway
+    if shutil_which("i3-msg"):
+        return run(["i3-msg", f"workspace number {index}"]) is not None
+    # X11 EWMH
+    if shutil_which("wmctrl"):
+        return run(["wmctrl", "-s", str(max(0, index - 1))]) is not None
+    return False
+
 # Main handle_text (simple fuzzy + patterns)
 def handle_text(text):
     if not text:
         return False
     txt = text.lower()
     # direct patterns
+    if ("рабоч" in txt and "стол" in txt) or ("переключ" in txt and "стол" in txt) or ("workspace" in txt):
+        idx = parse_workspace_index(txt)
+        if idx:
+            return switch_workspace(idx)
     if re.search(r"закр.*споти", txt) or "выключи музыку" in txt or "останови" in txt:
         return spotify_close()
     if re.search(r"пауз", txt) or "пауза" in txt:
