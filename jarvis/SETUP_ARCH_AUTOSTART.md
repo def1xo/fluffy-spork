@@ -51,7 +51,9 @@ JARVIS_DEBUG_AUDIO=0
 JARVIS_ENABLE_FUZZY_WAKE=1
 JARVIS_TTS_GUARD_SECONDS=1.2
 JARVIS_PENDING_KEEPALIVE_SECONDS=6.0
+JARVIS_COMMAND_FINALIZE_SECONDS=2.2
 JARVIS_TTS_VOICE=ru-RU-SvetlanaNeural
+JARVIS_TTS_BACKEND=pyttsx3
 # index или имя: pipewire/pulse/USB/HyperX/...
 JARVIS_MIC_DEVICE=pipewire
 ENV
@@ -148,3 +150,8 @@ systemctl --user restart jarvis.service
 
 
 Если агент обрывает длинную фразу, подними `JARVIS_SEGMENT_SECONDS` до `2.6` и `JARVIS_PENDING_KEEPALIVE_SECONDS` до `8.0`.
+
+
+Важно: порог wake теперь имеет нижнюю границу 78 в коде, даже если в env поставить меньше.
+
+Если edge-tts сыпет ошибками `No audio was received`, оставь `JARVIS_TTS_BACKEND=pyttsx3` (дефолт).

@@ -38,7 +38,7 @@ logger = logging.getLogger("jarvis")
 
 # Session / wake settings
 WAKE_WORDS = ["джарвис", "джарв", "джарвет", "жарвис", "jarvis"]
-WAKE_FUZZY_THRESHOLD = int(os.getenv("JARVIS_WAKE_THRESHOLD", "78"))
+WAKE_FUZZY_THRESHOLD = max(78, int(os.getenv("JARVIS_WAKE_THRESHOLD", "78")))
 WAKE_WINDOW_SECONDS = float(os.getenv("JARVIS_WAKE_WINDOW", "14.0"))
 
 SAMPLE_RATE = int(os.getenv("JARVIS_SAMPLE_RATE", "16000"))
@@ -54,6 +54,7 @@ DEBUG_AUDIO = os.getenv("JARVIS_DEBUG_AUDIO", "0") == "1"
 ENABLE_FUZZY_WAKE = os.getenv("JARVIS_ENABLE_FUZZY_WAKE", "1") == "1"
 TTS_GUARD_SECONDS = float(os.getenv("JARVIS_TTS_GUARD_SECONDS", "1.2"))
 PENDING_KEEPALIVE_SECONDS = float(os.getenv("JARVIS_PENDING_KEEPALIVE_SECONDS", "6.0"))
+COMMAND_FINALIZE_SECONDS = float(os.getenv("JARVIS_COMMAND_FINALIZE_SECONDS", "2.2"))
 
 # runtime session state
 session = {
@@ -286,6 +287,34 @@ def append_pending_command(piece):
     return merged
 
 
+
+
+def should_finalize_pending_now(text):
+    t = normalize_text(text)
+    if not t:
+        return False
+
+    # command likely incomplete if ends with preposition or chopped infinitive
+    trailing_tokens = ("на", "в", "к", "по", "для", "со", "с")
+    if any(t.endswith(" " + x) or t == x for x in trailing_tokens):
+        return False
+
+    if t.endswith(("перемест", "перемести", "включ", "отк", "запуст", "переключ")):
+        return False
+
+    # workspace intent without index is likely incomplete
+    if ("рабоч" in t and "стол" in t) and not __import__('re').search(r"\d", t):
+        stems = ("перв", "втор", "трет", "четв", "пят", "шест", "седь", "вось", "дев", "десят")
+        if not any(st in t for st in stems):
+            return False
+
+    return True
+
+
+def pending_timed_out():
+    ts = session.get("pending_ts", 0.0)
+    return bool(ts) and (time.time() - ts >= COMMAND_FINALIZE_SECONDS)
+
 def clear_pending_command():
     session["pending_cmd"] = ""
     session["pending_ts"] = 0.0
@@ -466,7 +495,7 @@ def transcribe_and_process(audio_np, input_sr):
         if inline_cmd and len(inline_cmd) >= 2:
             logger.info("Inline command after wake: %s", inline_cmd)
             combined_cmd = append_pending_command(inline_cmd)
-            if should_wait_for_more_command(combined_cmd):
+            if should_wait_for_more_command(combined_cmd) or (not should_finalize_pending_now(combined_cmd) and not pending_timed_out()):
                 session["last_wake"] = max(session.get("last_wake", 0.0), time.time() - (WAKE_WINDOW_SECONDS - PENDING_KEEPALIVE_SECONDS))
                 return
             handled = safe_handle_text_call(combined_cmd)
@@ -485,7 +514,7 @@ def transcribe_and_process(audio_np, input_sr):
     # if session active and within window -> handle
     if session.get("active") and (time.time() - session.get("last_wake", 0) <= WAKE_WINDOW_SECONDS):
         combined_cmd = append_pending_command(text)
-        if should_wait_for_more_command(combined_cmd):
+        if should_wait_for_more_command(combined_cmd) or (not should_finalize_pending_now(combined_cmd) and not pending_timed_out()):
             session["last_wake"] = max(session.get("last_wake", 0.0), time.time() - (WAKE_WINDOW_SECONDS - PENDING_KEEPALIVE_SECONDS))
             return
 
@@ -741,6 +770,7 @@ def run_doctor():
         "JARVIS_WAKE_THRESHOLD=78",
         "JARVIS_WAKE_WINDOW=14",
         "JARVIS_SEGMENT_SECONDS=2.4",
+        "JARVIS_COMMAND_FINALIZE_SECONDS=2.2",
         "JARVIS_TTS_VOICE=ru-RU-SvetlanaNeural",
     ]
     print("[doctor] Suggested env baseline:")
