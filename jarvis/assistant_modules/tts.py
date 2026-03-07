@@ -17,7 +17,7 @@ def _play_wav_nonblocking(path):
 async def _edge_synth(text, voice=None, outpath=None):
     try:
         import edge_tts
-        voice = voice or os.getenv("JARVIS_TTS_VOICE", "en-US-GuyNeural")
+        voice = voice or os.getenv("JARVIS_TTS_VOICE", "ru-RU-SvetlanaNeural")
         outpath = outpath or tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
         comm = edge_tts.Communicate(text, voice)
         await comm.save(outpath)

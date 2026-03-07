@@ -38,9 +38,9 @@ cat > ~/jarvis/.config/env <<'ENV'
 JARVIS_ASR_MODEL=small
 JARVIS_ASR_DEVICE=cpu
 JARVIS_SAMPLE_RATE=16000
-JARVIS_SEGMENT_SECONDS=1.8
+JARVIS_SEGMENT_SECONDS=2.4
 JARVIS_WAKE_THRESHOLD=78
-JARVIS_WAKE_WINDOW=12
+JARVIS_WAKE_WINDOW=14
 JARVIS_ENERGY_THRESHOLD=0.0035
 JARVIS_ADAPTIVE_ENERGY_FACTOR=3.0
 JARVIS_MIN_ENERGY_FLOOR=0.003
@@ -50,7 +50,8 @@ JARVIS_DEDUP_WINDOW=4
 JARVIS_DEBUG_AUDIO=0
 JARVIS_ENABLE_FUZZY_WAKE=1
 JARVIS_TTS_GUARD_SECONDS=1.2
-JARVIS_TTS_VOICE=en-US-GuyNeural
+JARVIS_PENDING_KEEPALIVE_SECONDS=6.0
+JARVIS_TTS_VOICE=ru-RU-SvetlanaNeural
 # index или имя: pipewire/pulse/USB/HyperX/...
 JARVIS_MIC_DEVICE=pipewire
 ENV
@@ -143,4 +144,7 @@ systemctl --user restart jarvis.service
 Команда рабочих столов поддерживается так: `джарвис перемести на третий рабочий стол` (Hyprland/i3/wmctrl).
 
 
-Для более "джарвис"-звучания поставь `JARVIS_TTS_VOICE=en-US-GuyNeural` (или другой voice из edge-tts).
+Для более "джарвис"-звучания поставь `JARVIS_TTS_VOICE=ru-RU-SvetlanaNeural` (или другой voice из edge-tts).
+
+
+Если агент обрывает длинную фразу, подними `JARVIS_SEGMENT_SECONDS` до `2.6` и `JARVIS_PENDING_KEEPALIVE_SECONDS` до `8.0`.
