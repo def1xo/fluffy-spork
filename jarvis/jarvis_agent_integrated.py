@@ -19,6 +19,11 @@ try:
 except Exception:
     tts_mod = None
 
+try:
+    import jarvis_replies as replies_mod
+except Exception:
+    replies_mod = None
+
 # optional faster-whisper (ASR)
 ASR_AVAILABLE = False
 WHISPER_MODEL = None
@@ -33,7 +38,7 @@ logger = logging.getLogger("jarvis")
 
 # Session / wake settings
 WAKE_WORDS = ["джарвис", "джарв", "джарвет", "жарвис", "jarvis"]
-WAKE_FUZZY_THRESHOLD = int(os.getenv("JARVIS_WAKE_THRESHOLD", "62"))
+WAKE_FUZZY_THRESHOLD = int(os.getenv("JARVIS_WAKE_THRESHOLD", "78"))
 WAKE_WINDOW_SECONDS = float(os.getenv("JARVIS_WAKE_WINDOW", "8.0"))
 
 SAMPLE_RATE = int(os.getenv("JARVIS_SAMPLE_RATE", "16000"))
@@ -46,6 +51,8 @@ ADAPTIVE_ENERGY_FACTOR = float(os.getenv("JARVIS_ADAPTIVE_ENERGY_FACTOR", "3.0")
 MIN_ENERGY_FLOOR = float(os.getenv("JARVIS_MIN_ENERGY_FLOOR", "0.003"))
 CALIBRATION_SECONDS = float(os.getenv("JARVIS_CALIBRATION_SECONDS", "1.5"))
 DEBUG_AUDIO = os.getenv("JARVIS_DEBUG_AUDIO", "0") == "1"
+ENABLE_FUZZY_WAKE = os.getenv("JARVIS_ENABLE_FUZZY_WAKE", "1") == "1"
+TTS_GUARD_SECONDS = float(os.getenv("JARVIS_TTS_GUARD_SECONDS", "1.2"))
 
 # runtime session state
 session = {
@@ -54,6 +61,9 @@ session = {
     "last_text": "",
     "last_text_ts": 0.0,
     "noise_floor": 0.0,
+    "last_tts_ts": 0.0,
+    "pending_cmd": "",
+    "pending_ts": 0.0,
 }
 
 transcribe_lock = threading.Lock()
@@ -83,6 +93,15 @@ atexit.register(cleanup_tmp)
 signal.signal(signal.SIGINT, _signal_handler)
 signal.signal(signal.SIGTERM, _signal_handler)
 
+def reply(kind, fallback):
+    try:
+        if replies_mod:
+            return replies_mod.pick(kind)
+    except Exception:
+        pass
+    return fallback
+
+
 def say(text):
     if not text:
         return
@@ -91,6 +110,7 @@ def say(text):
             tts_mod.speak(text)
         else:
             logger.info("[TTS] %s", text)
+        session["last_tts_ts"] = time.time()
     except Exception as e:
         logger.exception("TTS error: %s", e)
 
@@ -118,11 +138,26 @@ def fuzzy_wake_detect(text):
         return False, 0
     if any(w in t for w in WAKE_WORDS):
         return True, 100
+
+    if not ENABLE_FUZZY_WAKE:
+        return False, 0
+
+    # stricter fuzzy mode to reduce random false wakes
+    base = "джарвис"
     best = 0
-    for w in WAKE_WORDS:
-        score = max(fuzz.partial_ratio(w, t), fuzz.token_set_ratio(w, t))
-        if score > best:
-            best = score
+    for token in t.split():
+        token_score = max(fuzz.ratio(base, token), fuzz.partial_ratio(base, token))
+        if token_score > best:
+            best = token_score
+
+    if "jar" in t:
+        best = max(best, fuzz.partial_ratio("jarvis", t))
+
+    # require wake-like phonetics for ru tokens
+    looks_like_wake = any(x in t for x in ("джар", "жар", "jar"))
+    if not looks_like_wake:
+        return False, best
+
     return best >= WAKE_FUZZY_THRESHOLD, best
 
 
@@ -205,6 +240,42 @@ def open_input_stream_with_fallback(sd, selected_input):
     return None, last_error
 
 
+
+
+
+def should_wait_for_more_command(text):
+    t = normalize_text(text)
+    if not t:
+        return True
+    words = t.split()
+    if len(words) <= 1:
+        return True
+    if len(t) < 10:
+        return True
+    # common chopped prefix in streaming ASR
+    if t.endswith(("перемест", "включ", "открой", "запуст", "рабоч")):
+        return True
+    return False
+
+
+def append_pending_command(piece):
+    piece = normalize_text(piece)
+    if not piece:
+        return session.get("pending_cmd", "")
+    now = time.time()
+    prev = session.get("pending_cmd", "")
+    if prev and (now - session.get("pending_ts", 0.0) <= WAKE_WINDOW_SECONDS):
+        merged = normalize_text(prev + " " + piece)
+    else:
+        merged = piece
+    session["pending_cmd"] = merged
+    session["pending_ts"] = now
+    return merged
+
+
+def clear_pending_command():
+    session["pending_cmd"] = ""
+    session["pending_ts"] = 0.0
 
 def split_wake_and_command(text):
     t = normalize_text(text)
@@ -329,6 +400,8 @@ def safe_handle_text_call(text):
 # thread worker for transcriptions
 def transcribe_and_process(audio_np, input_sr):
     # audio_np - float32 [-1,1]
+    if time.time() - session.get("last_tts_ts", 0.0) < TTS_GUARD_SECONDS:
+        return
     energy = float((audio_np ** 2).mean()) if audio_np is not None and len(audio_np) else 0.0
     if DEBUG_AUDIO:
         dyn_thr = max(ENERGY_THRESHOLD, MIN_ENERGY_FLOOR, session.get("noise_floor", 0.0) * ADAPTIVE_ENERGY_FACTOR)
@@ -379,24 +452,35 @@ def transcribe_and_process(audio_np, input_sr):
         # if command is in same utterance: execute immediately
         if inline_cmd and len(inline_cmd) >= 2:
             logger.info("Inline command after wake: %s", inline_cmd)
-            handled = safe_handle_text_call(inline_cmd)
+            combined_cmd = append_pending_command(inline_cmd)
+            if should_wait_for_more_command(combined_cmd):
+                return
+            handled = safe_handle_text_call(combined_cmd)
             if handled:
-                say("Сделано.")
+                say(reply("done", "Сделано."))
+                clear_pending_command()
                 session["last_wake"] = time.time()
             else:
-                say("Не понял команду или не получилось выполнить.")
+                say(reply("not_understood", "Не понял команду или не получилось выполнить. Повтори команду."))
+                session["last_wake"] = time.time()
             return
 
-        say("Слушаю команды.")
+        clear_pending_command()
+        say(reply("listening", "Слушаю команды."))
         return
     # if session active and within window -> handle
     if session.get("active") and (time.time() - session.get("last_wake", 0) <= WAKE_WINDOW_SECONDS):
-        handled = safe_handle_text_call(text)
+        combined_cmd = append_pending_command(text)
+        if should_wait_for_more_command(combined_cmd):
+            return
+
+        handled = safe_handle_text_call(combined_cmd)
         if handled:
-            say("Сделано.")
+            say(reply("done", "Сделано."))
+            clear_pending_command()
             session["last_wake"] = time.time()
         else:
-            say("Не понял команду или не получилось выполнить. Повтори команду.")
+            say(reply("not_understood", "Не понял команду или не получилось выполнить. Повтори команду."))
             session["last_wake"] = time.time()
     else:
         logger.info("Ignored utterance (no active session).")
@@ -639,7 +723,8 @@ def run_doctor():
         "JARVIS_SAMPLE_RATE=16000",
         "JARVIS_ENERGY_THRESHOLD=0.0035",
         "JARVIS_MIN_ENERGY_FLOOR=0.0025",
-        "JARVIS_WAKE_THRESHOLD=62",
+        "JARVIS_WAKE_THRESHOLD=78",
+        "JARVIS_TTS_VOICE=en-US-GuyNeural",
     ]
     print("[doctor] Suggested env baseline:")
     for line in env_hint:
@@ -672,7 +757,7 @@ def main():
                 if not line:
                     continue
                 if any(w in line.lower() for w in WAKE_WORDS):
-                    say("Слушаю команды.")
+                    say(reply("listening", "Слушаю команды."))
                     cmd = input().strip()
                     if cmd:
                         safe_handle_text_call(cmd)
